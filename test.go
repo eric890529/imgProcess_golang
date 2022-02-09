@@ -56,7 +56,7 @@ func init(){
     //defaulte img
     flag.Parse()
 	fmt.Printf("args=%s, num=%d\n", flag.Args(), flag.NArg())
-	addr = "localhost:" + flag.Args()[0]
+	addr = ":" + flag.Args()[0]
 	host = flag.Args()[1]
 
 	files, err := ioutil.ReadDir("./default_img/")
@@ -99,7 +99,7 @@ func requestHandler(ctx *fasthttp.RequestCtx) {
 	query := string(ctx.QueryArgs().Peek("q"))
 	defaultQuery := string(ctx.QueryArgs().Peek("default"))
 	method := string(ctx.QueryArgs().Peek("method"))
-	max = string(ctx.QueryArgs().Peek("max"))
+	max := string(ctx.QueryArgs().Peek("max"))
 	maxNum, _:= strconv.Atoi(max)
 	maxNum = maxNum*1000
 
@@ -130,7 +130,6 @@ func requestHandler(ctx *fasthttp.RequestCtx) {
 
 	}else if resp.StatusCode() != 200 && defaultQuery != ""{
 		contentType = "image/" + defaultImageMap[defaultQuery].defaultType
-
 		if query != ""{
 			var num string = query
 			scale, _ = strconv.ParseFloat(num, 64)
@@ -153,7 +152,7 @@ func requestHandler(ctx *fasthttp.RequestCtx) {
 }
 
 func upperBound( originSize int, maxNum int,)(float64){
-	divNum :=   float64(originSize) / float64(maxNum) 
+	divNum :=   float64(originSize) / float64(maxNum)
 	sqrtNum := math.Sqrt(float64(divNum))
 	scale := 1 / sqrtNum
 	fmt.Printf("%f\n",scale)
@@ -163,7 +162,6 @@ func upperBound( originSize int, maxNum int,)(float64){
 func response(ctx *fasthttp.RequestCtx, send_s3 []byte, contentType string){
 
 	ctx.SetContentType(contentType)
-
 	ctx.SetBody([]byte(send_s3))
 
 	ctx.Response.Header.Set("X-My-Header", "my-header-value")
