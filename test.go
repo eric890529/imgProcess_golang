@@ -14,6 +14,7 @@ import (
 	"io/ioutil"
 	"strings"
 	"path/filepath"
+	"math"
 )
 
 
@@ -41,13 +42,14 @@ var host string
 var defaultConfig image.Config
 var defaultType string
 var defaultImageMap map[string]*defaultImg
-var imgSize int
+var defaultSize int
 var defaultImage image.Image
 
 type defaultImg struct {
     defaultImage image.Image
     defaultConfig image.Config
 	defaultType string
+	defaultSize int
 }
 
 func init(){
@@ -64,14 +66,14 @@ func init(){
 	
 	defaultImageMap = make(map[string]*defaultImg)
     for _, file := range files {
-		defaultImage, defaultConfig, defaultType, imgSize, _ = getImageFromFilePath("./default_img/" + file.Name())
+		defaultImage, defaultConfig, defaultType, defaultSize, _ = getImageFromFilePath("./default_img/" + file.Name())
 		fileName := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
 		defaultImageMap[fileName] = &defaultImg{
 			defaultImage : defaultImage,
 			defaultConfig : defaultConfig,
 			defaultType : defaultType,
+			defaultSize: defaultSize,
 		}
-		log.Printf("%d", imgSize)
     }
 }
 
@@ -79,13 +81,13 @@ func getImageFromFilePath(filePath string) ( image.Image, image.Config, string, 
     f, err := os.Open(filePath)
 	imgBytes, _ := ioutil.ReadAll(f);
     if err != nil {
-        return nil,image.Config{},"", err
+        return nil,image.Config{},"", 0, err
     }
     img, imageType, err := image.Decode(bytes.NewReader(imgBytes))
 	im, _, _ := image.DecodeConfig(bytes.NewReader(imgBytes))
 	fmt.Printf("The file is %d bytes long\n", len(imgBytes))
 	defer f.Close()
-    return img, im, imageType , 123, err
+    return img, im, imageType , len(imgBytes), err
 }
 
 
@@ -104,41 +106,49 @@ func requestHandler(ctx *fasthttp.RequestCtx) {
 	maxNum, _:= strconv.Atoi(max)
 	maxNum = maxNum*1000
 
-	if query != ""{
-		var num string = query
-		scale, _ = strconv.ParseFloat(num, 64)
-	}else{
-		scale = 1
-	}
 	resp := doRequest(host)
 	bodyBytes := resp.Body()
-
-	fmt.Printf("comapre")
-	fmt.Printf("%d %d\n",len(bodyBytes),maxNum)
-	if method == "UB" && len(bodyBytes) > maxNum{
-		divNum := len(bodyBytes) * maxNum
-		scale = float64(divNum)
-		fmt.Printf("UB")
-		fmt.Printf("%f",scale)
-	}
 
 	var respHeader fasthttp.ResponseHeader
 	var contentType string
 	var img image.Image
 	var im image.Config
-	
+
 	if resp.StatusCode() == 200{
 		respHeader = resp.Header
 		contentType = string(respHeader.ContentType())
 		fmt.Printf( "Header %q\n", respHeader.ContentType())
+
+		fmt.Printf("comapre1\n")
+		fmt.Printf("%d %d\n",len(bodyBytes), maxNum)
+
+		if query != ""{
+			var num string = query
+			scale, _ = strconv.ParseFloat(num, 64)
+		}else if method == "UB" && len(bodyBytes) > maxNum{
+			scale = upperBound(len(bodyBytes), maxNum)
+		}else{
+			scale = 1
+		}
 		img, _, _ = image.Decode(bytes.NewReader(bodyBytes))
 		im, _, _ = image.DecodeConfig(bytes.NewReader(bodyBytes))
 		send_s3 := compressImg(img, im, scale, contentType)
+		fmt.Printf("原來大小%d 壓縮大小%d\n",len(bodyBytes), len(send_s3) )
 		response(ctx, send_s3, contentType)
 	}else if resp.StatusCode() != 200 && defaultQuery != ""{
 		contentType = "image/" + defaultImageMap[defaultQuery].defaultType
-		//log.Println("resp.StatusCode = ",resp.StatusCode())
-		//log.Println("defaultQuery = ",defaultQuery)
+
+		fmt.Printf("comapre2\n")
+		fmt.Printf("%d %d\n",defaultImageMap[defaultQuery].defaultSize,maxNum)
+
+		if query != ""{
+			var num string = query
+			scale, _ = strconv.ParseFloat(num, 64)
+		}else if method == "UB" && defaultImageMap[defaultQuery].defaultSize > maxNum{
+			scale = upperBound(len(bodyBytes),maxNum)
+		}else{
+			scale = 1
+		}
 		img = defaultImageMap[defaultQuery].defaultImage
 		im = defaultImageMap[defaultQuery].defaultConfig
 		send_s3 := compressImg(img, im, scale, contentType)
@@ -150,6 +160,15 @@ func requestHandler(ctx *fasthttp.RequestCtx) {
 		ctx.Error("Unsupported path", fasthttp.StatusUnsupportedMediaType )
 	}
 	fmt.Printf("size %d %d\n\n", im.Width, im.Height)
+}
+
+func upperBound( originSize int, maxNum int,)(float64){
+	divNum :=   float64(originSize) / float64(maxNum) 
+	sqrtNum := math.Sqrt(float64(divNum))
+	fmt.Printf("sqrtNum = %f\n", sqrtNum)
+	scale := 1 / sqrtNum
+	fmt.Printf("scale = %f\n", scale)
+	return scale
 }
 
 func response(ctx *fasthttp.RequestCtx, send_s3 []byte, contentType string){
