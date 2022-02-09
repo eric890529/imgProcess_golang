@@ -90,9 +90,6 @@ func getImageFromFilePath(filePath string) ( image.Image, image.Config, string, 
     return img, im, imageType , len(imgBytes), err
 }
 
-
-
-
 func requestHandler(ctx *fasthttp.RequestCtx) {
 	host = flag.Args()[1]
 	host = host + string(ctx.Path())
@@ -102,7 +99,7 @@ func requestHandler(ctx *fasthttp.RequestCtx) {
 	query := string(ctx.QueryArgs().Peek("q"))
 	defaultQuery := string(ctx.QueryArgs().Peek("default"))
 	method := string(ctx.QueryArgs().Peek("method"))
-	max := string(ctx.QueryArgs().Peek("max"))
+	max = string(ctx.QueryArgs().Peek("max"))
 	maxNum, _:= strconv.Atoi(max)
 	maxNum = maxNum*1000
 
@@ -118,10 +115,6 @@ func requestHandler(ctx *fasthttp.RequestCtx) {
 		respHeader = resp.Header
 		contentType = string(respHeader.ContentType())
 		fmt.Printf( "Header %q\n", respHeader.ContentType())
-
-		fmt.Printf("comapre1\n")
-		fmt.Printf("%d %d\n",len(bodyBytes), maxNum)
-
 		if query != ""{
 			var num string = query
 			scale, _ = strconv.ParseFloat(num, 64)
@@ -133,19 +126,16 @@ func requestHandler(ctx *fasthttp.RequestCtx) {
 		img, _, _ = image.Decode(bytes.NewReader(bodyBytes))
 		im, _, _ = image.DecodeConfig(bytes.NewReader(bodyBytes))
 		send_s3 := compressImg(img, im, scale, contentType)
-		fmt.Printf("原來大小%d 壓縮大小%d\n",len(bodyBytes), len(send_s3) )
 		response(ctx, send_s3, contentType)
+
 	}else if resp.StatusCode() != 200 && defaultQuery != ""{
 		contentType = "image/" + defaultImageMap[defaultQuery].defaultType
-
-		fmt.Printf("comapre2\n")
-		fmt.Printf("%d %d\n",defaultImageMap[defaultQuery].defaultSize,maxNum)
 
 		if query != ""{
 			var num string = query
 			scale, _ = strconv.ParseFloat(num, 64)
 		}else if method == "UB" && defaultImageMap[defaultQuery].defaultSize > maxNum{
-			scale = upperBound(len(bodyBytes),maxNum)
+			scale = upperBound(defaultImageMap[defaultQuery].defaultSize, maxNum)
 		}else{
 			scale = 1
 		}
@@ -165,9 +155,8 @@ func requestHandler(ctx *fasthttp.RequestCtx) {
 func upperBound( originSize int, maxNum int,)(float64){
 	divNum :=   float64(originSize) / float64(maxNum) 
 	sqrtNum := math.Sqrt(float64(divNum))
-	fmt.Printf("sqrtNum = %f\n", sqrtNum)
 	scale := 1 / sqrtNum
-	fmt.Printf("scale = %f\n", scale)
+	fmt.Printf("%f\n",scale)
 	return scale
 }
 
@@ -186,10 +175,9 @@ func response(ctx *fasthttp.RequestCtx, send_s3 []byte, contentType string){
 }
 
 func compressImg(img image.Image, im image.Config, scale float64, contentType string)([]byte){
-	fmt.Printf( "origin size %d %d\n\n",im.Height, im.Width)
+
 	h :=  float64(im.Height)*scale
-	w :=  float64(im.Width)*scale
-	fmt.Printf( "reize %f %f\n\n",h, w)
+	//w :=  float64(im.Width)*scale
 
 	m := resize.Resize( 0, uint(h), img, resize.Lanczos3)
 	buf := new(bytes.Buffer)
